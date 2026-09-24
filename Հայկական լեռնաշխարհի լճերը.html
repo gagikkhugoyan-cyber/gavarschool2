@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="hy">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Հայկական լեռնաշխարհի լճերը</title>
+<style>
+  :root{
+    --bg:#1b1f24;
+    --panel:#242a31;
+    --text:#eef1f4;
+    --muted:#9aa4af;
+    --red:#e53e3e;
+    --blue:#3182ce;
+    --yellow:#ecc94b;
+    --grey:#8a8f96;
+    --black:#111417;
+    --grid-line:#3a4048;
+    box-sizing:border-box;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;
+  }
+  body{
+    display:flex;
+    justify-content:center;
+  }
+  .app{
+    max-width:680px;
+    margin:0 auto;
+    padding:20px 16px calc(32px + env(safe-area-inset-bottom,0px));
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:16px;
+  }
+  h1{
+    font-size:1.25rem;
+    margin:4px 0 0;
+    text-align:center;
+  }
+  .legend{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:10px 16px;
+    background:var(--panel);
+    padding:10px 16px;
+    border-radius:14px;
+    width:100%;
+    font-size:0.85rem;
+  }
+  .legend span{ display:flex; align-items:center; gap:6px; }
+  .dot{ width:12px; height:12px; border-radius:3px; display:inline-block; }
+  .dot.red{background:var(--red);}
+  .dot.blue{background:var(--blue);}
+  .dot.yellow{background:var(--yellow);}
+  .dot.grey{background:var(--grey);}
+
+  .board{
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    grid-template-rows:repeat(7,1fr);
+    gap:6px;
+    width:100%;
+    max-width:560px;
+    aspect-ratio:1/1;
+    background:var(--panel);
+    padding:12px;
+    border-radius:16px;
+    box-shadow:0 6px 20px rgba(0,0,0,0.35);
+  }
+  .cell{
+    background:var(--black);
+    border-radius:6px;
+    border:1px solid var(--grid-line);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:700;
+    font-size:clamp(12px, 3vw, 20px);
+    color:#cfd6dd;
+    transition:transform 0.08s ease, background 0.15s ease;
+    user-select:none;
+  }
+  .cell:active{ transform:scale(0.9); }
+  .cell.revealed{ cursor:default; }
+  .cell[data-color="red"]{ background:var(--red); color:#fff; }
+  .cell[data-color="blue"]{ background:var(--blue); color:#fff; }
+  .cell[data-color="yellow"]{ background:var(--yellow); color:#332b00; }
+  .cell[data-color="grey"]{ background:var(--grey); color:#222; }
+
+  .controls{
+    width:100%;
+    max-width:560px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
+  .controls button{
+    padding:12px 10px;
+    border-radius:12px;
+    border:1px solid var(--grid-line);
+    background:var(--panel);
+    color:var(--text);
+    font-size:0.9rem;
+    font-weight:600;
+    cursor:pointer;
+    transition:background 0.15s ease, transform 0.08s ease;
+  }
+  .controls button:active{ transform:scale(0.97); }
+  .controls button:hover{ background:#2c333b; }
+  .controls .full-row{ grid-column:1/-1; }
+
+  .hint{
+    font-size:0.8rem;
+    color:var(--muted);
+    text-align:center;
+    max-width:480px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>🏔️ Հայկական լեռնաշխարհի լճերը</h1>
+
+  <div class="legend">
+    <span><span class="dot red"></span>Կարմիր — 12</span>
+    <span><span class="dot blue"></span>Կապույտ — 12</span>
+    <span><span class="dot yellow"></span>Դեղին — 12</span>
+    <span><span class="dot grey"></span>Մոխրագույն — 13</span>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <p class="hint" id="hint">Սեղմիր որևէ վանդակի համարի վրա՝ տակի գույնը տեսնելու համար։</p>
+
+  <div class="controls">
+    <button id="showAllBtn">👁 Ցույց տալ բոլորը</button>
+    <button id="hideAllBtn">⚫ Փակել բոլորը (Սև)</button>
+    <button id="newGameBtn" class="full-row">🔀 Նոր Խաղ (նոր պատահական բաշխում)</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const TOTAL = 49;
+  const COUNTS = { red:12, blue:12, yellow:12, grey:13 }; // 12+12+12+13 = 49
+
+  const boardEl = document.getElementById('board');
+  const hint = document.getElementById('hint');
+  const showAllBtn = document.getElementById('showAllBtn');
+  const hideAllBtn = document.getElementById('hideAllBtn');
+  const newGameBtn = document.getElementById('newGameBtn');
+
+  let assignment = [];   // color for each index 0..63
+  let revealed = [];     // boolean per cell
+
+  function shuffledColorPool(){
+    const pool = [];
+    for(const [color, n] of Object.entries(COUNTS)){
+      for(let i=0;i<n;i++) pool.push(color);
+    }
+    // Fisher-Yates shuffle
+    for(let i=pool.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [pool[i],pool[j]] = [pool[j],pool[i]];
+    }
+    return pool;
+  }
+
+  function buildBoard(){
+    boardEl.innerHTML = '';
+    for(let i=0;i<TOTAL;i++){
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.textContent = (i+1);
+      cell.dataset.index = i;
+      cell.addEventListener('click', () => revealCell(i));
+      boardEl.appendChild(cell);
+    }
+  }
+
+  function renderCell(i){
+    const cellEl = boardEl.children[i];
+    if(revealed[i]){
+      cellEl.dataset.color = assignment[i];
+      cellEl.classList.add('revealed');
+    } else {
+      delete cellEl.dataset.color;
+      cellEl.classList.remove('revealed');
+    }
+  }
+
+  function renderAll(){
+    for(let i=0;i<TOTAL;i++) renderCell(i);
+  }
+
+  function revealCell(i){
+    if(revealed[i]) return;
+    revealed[i] = true;
+    renderCell(i);
+  }
+
+  function newGame(){
+    assignment = shuffledColorPool();
+    revealed = new Array(TOTAL).fill(false);
+    renderAll();
+    hint.textContent = 'Նոր խաղ սկսվեց։ Սեղմիր որևէ վանդակի համարի վրա՝ տակի գույնը տեսնելու համար։';
+  }
+
+  showAllBtn.addEventListener('click', () => {
+    revealed = new Array(TOTAL).fill(true);
+    renderAll();
+    hint.textContent = 'Բոլոր վանդակները բացված են։';
+  });
+
+  hideAllBtn.addEventListener('click', () => {
+    revealed = new Array(TOTAL).fill(false);
+    renderAll();
+    hint.textContent = 'Բոլոր վանդակները նորից փակվեցին (Սև)։ Համարակալումը մնում է նույնը։';
+  });
+
+  newGameBtn.addEventListener('click', newGame);
+
+  // Init
+  buildBoard();
+  newGame();
+})();
+</script>
+</body>
+</html>
